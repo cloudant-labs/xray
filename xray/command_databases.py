@@ -12,18 +12,31 @@ from tabulate import tabulate
 @click.command()
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
-def databases(obj, limit):
+@click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
+def databases(obj, limit, connections):
     all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
     all_dbs = all_dbs_resp.json()
 
     db_stats = []
 
     urls = map(partial(get_stats_url, obj['URL']), all_dbs)
-    rs = (grequests.get(u) for u in urls)
+    session = requests.session()
+    rs = (grequests.get(u, session=session) for u in urls)
+    errors = 0
 
-    for r in grequests.imap(rs, size=1000):
-        r.raise_for_status()
-        db_stats.append(get_stats(r))
+    with click.progressbar(grequests.imap(rs, size=connections),
+                       length=len(all_dbs)) as bar:
+        for r in bar:
+            if r.status_code is requests.codes.ok:
+                db_stats.append(get_stats(r))
+            elif r.status_code is 404:
+                # indicates database was deleted before we queried it
+                continue
+            elif r.status_code is 500:
+                errors = errors + 1
+                click.echo('500 error processing {0}. Continuing...' + r.url, err=True)
+            else:
+                r.raise_for_status()
 
     table_headers = ["name",
                      "doc count",
@@ -33,6 +46,8 @@ def databases(obj, limit):
 
     ## sort and limit db_stats
     sorted_db_stats = sorted(db_stats, key=lambda x: x[1], reverse=True)
+
+    click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
     if limit > 0 and len(db_stats) > limit:
         click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
