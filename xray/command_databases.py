@@ -12,12 +12,12 @@ from tabulate import tabulate
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
-# @click.option('--index-counts', '-i', is_flag=True, default=False, help='Show index counts per db.')
-@click.option('--shards', '-s', is_flag=True, default=False, help='Show shard counts')
+@click.option('--indexes', '-i', is_flag=True, default=False, help='Show index counts per db. Results are listed as views, view_groups, search, geo, query views, query view groups, query search')
+@click.option('--shards', '-s', is_flag=True, default=False, help='Show shard counts per db.')
 @click.option('--shard-docs', '-qd', default=10000000, type=float, help='Recommended docs per shard.')
 @click.option('--shard-size', '-qs', default=10, type=float, help='Recommended GB per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, shards, shard_docs, shard_size, connections):
+def databases(obj, limit, pretty_print, indexes, shards, shard_docs, shard_size, connections):
     ctx = obj
     ctx['shards'] = shards
     ctx['pretty_print'] = pretty_print
@@ -35,7 +35,7 @@ def databases(obj, limit, pretty_print, shards, shard_docs, shard_size, connecti
     db_stats = get_db_info(ctx, all_dbs)
 
     ## sort and limit db_stats
-    sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'], reverse=True)
+    sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'] + x['doc_del_count'], reverse=True)
     sorted_db_stats = sorted_db_stats[:limit]
 
     table_headers = ['name',
@@ -44,13 +44,16 @@ def databases(obj, limit, pretty_print, shards, shard_docs, shard_size, connecti
 
     # get sharding info for each database
     if shards:
-        table_headers.extend(['q',
-                     'recommended q (by count/size)'])
-
-        sorted_db_stats = get_shard_data(ctx, sorted_db_stats)
-        add_recommended_q(ctx, sorted_db_stats)
         click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
         click.echo('Recommended shard size: {0}GB'.format(shard_size))
+
+        table_headers.extend(['q', 'recommended q (by count/size)'])
+        sorted_db_stats = get_shard_data(ctx, sorted_db_stats)
+        add_recommended_q(ctx, sorted_db_stats)
+
+    if indexes:
+        table_headers.extend(['v/vg/s/g/qv/qvg/qs'])
+        sorted_db_stats = get_index_data(ctx, sorted_db_stats)
 
     if limit > 0 and len(db_stats) > limit:
         click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
@@ -66,6 +69,7 @@ def databases(obj, limit, pretty_print, shards, shard_docs, shard_size, connecti
 
 def process_requests(ctx, rs, count, process_fun, ordered=False):
     errors = 0
+    index = -1
 
     if ordered:
         request_iterator = grequests.map(rs, size=ctx['connections'])
@@ -73,7 +77,8 @@ def process_requests(ctx, rs, count, process_fun, ordered=False):
         request_iterator = grequests.imap(rs, size=ctx['connections'])
 
     with click.progressbar(request_iterator, length=count) as bar:
-        for index, r in enumerate(bar):
+        for r in bar:
+            index = index + 1
             if r.status_code is requests.codes.ok:
                 process_fun(index, r)
             elif r.status_code is 404:
@@ -83,15 +88,20 @@ def process_requests(ctx, rs, count, process_fun, ordered=False):
                 errors = errors + 1
                 click.echo('500 error processing {0}. Continuing...' + r.url, err=True)
             else:
+                click.echo(r.status_code)
                 r.raise_for_status()
 
     if errors > 0:
         click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
 
+def get_db_info_url(url, db):
+    return '{0}/{1}'.format(url, db)
+
+
 def get_db_info(ctx, all_dbs):
     db_stats = []
-    urls = map(partial(get_stats_url, ctx['URL']), all_dbs)
+    urls = map(partial(get_db_info_url, ctx['URL']), all_dbs)
     rs = (grequests.get(u, session=ctx['session']) for u in urls)
     url_count = len(urls)
 
@@ -100,9 +110,13 @@ def get_db_info(ctx, all_dbs):
     def process_response(index, response):
         db_stats.append(response.json())
 
-    process_requests(ctx, rs, url_count, process_response, ordered=True)
+    process_requests(ctx, rs, url_count, process_response)
 
     return db_stats
+
+
+def get_shards_url(url, db):
+    return '{0}/{1}/_shards'.format(url, db)
 
 
 def get_shard_data(ctx, db_stats):
@@ -117,7 +131,68 @@ def get_shard_data(ctx, db_stats):
         q = len(response.json()['shards'])
         db_stats[index]['q'] = q
 
-    process_requests(ctx, rs, url_count, process_response)
+    process_requests(ctx, rs, url_count, process_response, ordered=True)
+
+    return db_stats
+
+
+def get_ddocs_url(url, db):
+    return '{0}/{1}/_all_docs?startkey=%22_design%252F%22&endkey=%22_design0%22&include_docs=true'.format(url, db)
+
+
+def get_index_data(ctx, db_stats):
+    db_names = [db['db_name'] for db in db_stats]
+    urls = map(partial(get_ddocs_url, ctx['URL']), db_names)
+    rs = (grequests.get(u, session=ctx['session']) for u in urls)
+    url_count = len(urls)
+
+    click.echo('Fetching index stats for {0} databases...'.format(url_count))
+
+    def process_response(index, response):
+        design_docs = response.json()["rows"]
+        views = 0
+        view_groups = 0
+        search = 0
+        geo = 0
+        query_views = 0
+        query_view_groups = 0
+        query_search = 0
+
+        for row in design_docs:
+            doc = row['doc']
+            is_query = False
+
+            if 'language' in doc and doc['language'] is 'query':
+                is_query = True
+
+            if 'views' in doc:
+                if is_query:
+                    query_views = query_views + len(doc["views"])
+                    query_view_groups = query_view_groups + 1
+                else:
+                    views = views + len(doc["views"])
+                    view_groups = view_groups + 1
+
+            if 'indexes' in doc:
+                if is_query:
+                    query_search = query_search + len(doc["indexes"])
+                else:
+                    search = search + len(doc["indexes"])
+
+            if 'st_indexes' in doc:
+                geo = geo + len(doc["st_indexes"])
+
+        db_stats[index]['indexes'] = {
+            "views": views,
+            "view_groups": view_groups,
+            "search": search,
+            "geo": geo,
+            "query_views": query_views,
+            "query_view_groups": query_view_groups,
+            "query_search": query_search
+        }
+
+    process_requests(ctx, rs, url_count, process_response, ordered=True)
 
     return db_stats
 
@@ -137,14 +212,6 @@ def sizeof_fmt(num):
         if abs(num) < 1024.0:
             return "%3.1f %s" % (num, x)
         num /= 1024.0
-
-
-def get_shards_url(url, db):
-    return url + '/' + db + '/_shards'
-
-
-def get_stats_url(url, db):
-    return url + '/' + db
 
 
 def add_recommended_q(ctx, db_stats):
@@ -176,5 +243,15 @@ def format_stats(ctx, db_stats):
         result.extend([
             db_stats['q'],
             '{0}/{1}'.format(int(db_stats['q_docs']), int(db_stats['q_bytes']))])
+
+    if 'indexes' in db_stats:
+        indexes = db_stats['indexes']
+        result.append('{0}/{1}/{2}/{3}/{4}/{5}/{6}'.format(indexes['views'],
+            indexes['view_groups'],
+            indexes['search'],
+            indexes['geo'],
+            indexes['query_views'],
+            indexes['query_view_groups'],
+            indexes['query_search']))
 
     return result
