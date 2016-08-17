@@ -12,30 +12,45 @@ from tabulate import tabulate
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
+# @click.option('--index-counts', '-i', is_flag=True, default=False, help='Show index counts per db.')
+@click.option('--shards', '-s', is_flag=True, default=False, help='Show shard counts')
 @click.option('--shard-docs', '-qd', default=10000000, type=float, help='Recommended docs per shard.')
 @click.option('--shard-size', '-qs', default=10, type=float, help='Recommended GB per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
+def databases(obj, limit, pretty_print, shards, shard_docs, shard_size, connections):
+    ctx = obj
+    ctx['shards'] = shards
+    ctx['pretty_print'] = pretty_print
+    ctx['connections'] = connections
+
     all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
     all_dbs = all_dbs_resp.json()
-    shard_bytes = shard_size * 1073741824
+
+    ctx['shard_docs'] = float(shard_docs)
+    ctx['shard_bytes'] = float(shard_size * 1073741824)
 
     db_stats = []
-    base_url = obj['URL']
+    ctx['session'] = requests.session()
 
-    session = requests.session()
-
-    db_stats = get_db_info(session, connections, base_url, all_dbs)
+    db_stats = get_db_info(ctx, all_dbs)
 
     ## sort and limit db_stats
     sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'], reverse=True)
     sorted_db_stats = sorted_db_stats[:limit]
 
+    table_headers = ['name',
+                     'docs (total/active/deleted)',
+                     'db size']
+
     # get sharding info for each database
-    sorted_db_stats = get_shard_data(session, connections, base_url, sorted_db_stats)
-    add_recommended_q(sorted_db_stats, shard_docs, shard_bytes)
-    click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
-    click.echo('Recommended shard size: {0}GB'.format(shard_size))
+    if shards:
+        table_headers.extend(['q',
+                     'recommended q (by count/size)'])
+
+        sorted_db_stats = get_shard_data(ctx, sorted_db_stats)
+        add_recommended_q(ctx, sorted_db_stats)
+        click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
+        click.echo('Recommended shard size: {0}GB'.format(shard_size))
 
     if limit > 0 and len(db_stats) > limit:
         click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
@@ -44,24 +59,18 @@ def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
         click.echo('Showing all {0} databases, '.format(len(db_stats)) +
                    'sorted by document count descending.')
 
-    table_headers = ['name',
-                     'docs (total/active/deleted)',
-                     'db size',
-                     'q',
-                     'recommended q (count)',
-                     'recommended q (size)']
-    table = map(partial(format_stats, pretty_print), sorted_db_stats)
+    table = map(partial(format_stats, ctx), sorted_db_stats)
     click.echo('\n')
     click.echo(tabulate(table, headers=table_headers))
 
 
-def process_requests(rs, connections, count, process_fun, ordered=False):
+def process_requests(ctx, rs, count, process_fun, ordered=False):
     errors = 0
 
     if ordered:
-        request_iterator = grequests.map(rs, size=connections)
+        request_iterator = grequests.map(rs, size=ctx['connections'])
     else:
-        request_iterator = grequests.imap(rs, size=connections)
+        request_iterator = grequests.imap(rs, size=ctx['connections'])
 
     with click.progressbar(request_iterator, length=count) as bar:
         for index, r in enumerate(bar):
@@ -80,10 +89,10 @@ def process_requests(rs, connections, count, process_fun, ordered=False):
         click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
 
-def get_db_info(session, connections, base_url, all_dbs):
+def get_db_info(ctx, all_dbs):
     db_stats = []
-    urls = map(partial(get_stats_url, base_url), all_dbs)
-    rs = (grequests.get(u, session=session) for u in urls)
+    urls = map(partial(get_stats_url, ctx['URL']), all_dbs)
+    rs = (grequests.get(u, session=ctx['session']) for u in urls)
     url_count = len(urls)
 
     click.echo('Fetching db info for {0} databases...'.format(url_count))
@@ -91,15 +100,15 @@ def get_db_info(session, connections, base_url, all_dbs):
     def process_response(index, response):
         db_stats.append(response.json())
 
-    process_requests(rs, connections, url_count, process_response, ordered=True)
+    process_requests(ctx, rs, url_count, process_response, ordered=True)
 
     return db_stats
 
 
-def get_shard_data(session, connections, base_url, db_stats):
+def get_shard_data(ctx, db_stats):
     db_names = [db['db_name'] for db in db_stats]
-    urls = map(partial(get_shards_url, base_url), db_names)
-    rs = (grequests.get(u, session=session) for u in urls)
+    urls = map(partial(get_shards_url, ctx['URL']), db_names)
+    rs = (grequests.get(u, session=ctx['session']) for u in urls)
     url_count = len(urls)
 
     click.echo('Fetching shard counts for {0} databases...'.format(url_count))
@@ -108,7 +117,7 @@ def get_shard_data(session, connections, base_url, db_stats):
         q = len(response.json()['shards'])
         db_stats[index]['q'] = q
 
-    process_requests(rs, connections, url_count, process_response)
+    process_requests(ctx, rs, url_count, process_response)
 
     return db_stats
 
@@ -138,30 +147,34 @@ def get_stats_url(url, db):
     return url + '/' + db
 
 
-def add_recommended_q(db_stats, recommended_shard_docs, recommended_shard_bytes):
+def add_recommended_q(ctx, db_stats):
     for s in db_stats:
         if 'q' in s:
             total_docs = s['doc_count'] + s['doc_del_count']
             size_bytes = s['other']['data_size']
-            s['q_docs'] = math.ceil((total_docs + 1.0) / float(recommended_shard_docs))
-            s['q_bytes'] = math.ceil((size_bytes + 1.0) / float(recommended_shard_bytes))
+            s['q_docs'] = math.ceil((total_docs + 1.0) / ctx['shard_docs'])
+            s['q_bytes'] = math.ceil((size_bytes + 1.0) / ctx['shard_bytes'])
 
 
-def format_stats(pretty_print, db_stats):
+def format_stats(ctx, db_stats):
     doc_count = db_stats['doc_count']
     doc_del_count = db_stats['doc_del_count']
     doc_count_total = doc_count + doc_del_count
     size = db_stats['other']['data_size']
 
-    if pretty_print:
+    if ctx['pretty_print']:
         doc_count_total = millify(doc_count_total)
         doc_count = millify(doc_count)
         doc_del_count = millify(doc_del_count)
         size = sizeof_fmt(size)
 
-    return [db_stats['db_name'],
-            '{0} / {1} / {2}'.format(doc_count_total, doc_count, doc_del_count),
-            size,
+    result = [db_stats['db_name'],
+              '{0} / {1} / {2}'.format(doc_count_total, doc_count, doc_del_count),
+              size]
+
+    if ctx['shards']:
+        result.extend([
             db_stats['q'],
-            db_stats['q_docs'],
-            db_stats['q_bytes']]
+            '{0}/{1}'.format(int(db_stats['q_docs']), int(db_stats['q_bytes']))])
+
+    return result
