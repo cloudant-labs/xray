@@ -22,21 +22,50 @@ def databases(obj, limit, pretty_print, shard_docs, shard_bytes, connections):
     db_stats = []
     base_url = obj['URL']
 
-    urls = map(partial(get_stats_url, base_url), all_dbs)
     session = requests.session()
+
+    db_stats = get_db_info(session, connections, base_url, all_dbs)
+
+    ## sort and limit db_stats
+    sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'], reverse=True)
+    sorted_db_stats = sorted_db_stats[:limit]
+
+    sorted_db_stats = get_shard_data(session, connections, base_url, sorted_db_stats)
+    add_recommended_q(sorted_db_stats, shard_docs, shard_bytes)
+
+
+    if limit > 0 and len(db_stats) > limit:
+        click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
+                   'sorted by document count descending.')
+    else:
+        click.echo('Showing all {0} databases, '.format(len(db_stats)) +
+                   'sorted by document count descending.')
+
+    table_headers = ['name',
+                     'doc count',
+                     'deleted doc count',
+                     'db size',
+                     'q',
+                     'recommended q (count)',
+                     'recommended q (size)']
+    table = map(partial(format_stats, pretty_print), sorted_db_stats)
+    click.echo('\n')
+    click.echo(tabulate(table, headers=table_headers))
+
+
+def get_db_info(session, connections, base_url, all_dbs):
+    db_stats = []
+    urls = map(partial(get_stats_url, base_url), all_dbs)
     rs = (grequests.get(u, session=session) for u in urls)
     errors = 0
 
-    click.echo('Analysing {0} databases...'.format(len(all_dbs)))
+    click.echo('Fetching db info for {0} databases...'.format(len(all_dbs)))
 
     with click.progressbar(grequests.imap(rs, size=connections),
                        length=len(all_dbs)) as bar:
         for r in bar:
             if r.status_code is requests.codes.ok:
                 stats_obj = r.json()
-                q = get_shard_count(r.url, session)
-                stats_obj['q'] = q
-                add_recommended_q(stats_obj, shard_docs, shard_bytes)
                 db_stats.append(stats_obj)
             elif r.status_code is 404:
                 # indicates database was deleted before we queried it
@@ -47,30 +76,39 @@ def databases(obj, limit, pretty_print, shard_docs, shard_bytes, connections):
             else:
                 r.raise_for_status()
 
+    if errors > 0:
+        click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
-    ## sort and limit db_stats
-    sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'], reverse=True)
+    return db_stats
 
-    click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
-    if limit > 0 and len(db_stats) > limit:
-        click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
-                   'sorted by document count descending.')
-        sorted_db_stats = sorted_db_stats[:limit]
-    else:
-        click.echo('Showing all {0} databases, '.format(len(db_stats)) +
-                   'sorted by document count descending.')
+def get_shard_data(session, connections, base_url, db_stats):
+    db_names = [db['db_name'] for db in db_stats]
+    urls = map(partial(get_shards_url, base_url), db_names)
+    rs = (grequests.get(u, session=session) for u in urls)
+    errors = 0
 
-    table_headers = ["name",
-                     "doc count",
-                     "deleted doc count",
-                     "db size",
-                     "q",
-                     "recommended q (count)",
-                     "recommended q (size)"]
-    table = map(partial(format_stats, pretty_print), sorted_db_stats)
-    click.echo('\n')
-    click.echo(tabulate(table, headers=table_headers))
+    click.echo('Fetching shard counts for {0} databases...'.format(len(db_stats)))
+
+    with click.progressbar(grequests.map(rs, size=connections),
+                       length=len(db_stats)) as bar:
+        for index, r in enumerate(bar):
+            if r.status_code is requests.codes.ok:
+                q = len(r.json()['shards'])
+                db_stats[index]['q'] = q
+            elif r.status_code is 404:
+                # indicates database was deleted before we queried it
+                continue
+            elif r.status_code is 500:
+                errors = errors + 1
+                click.echo('500 error processing {0}. Continuing...' + r.url, err=True)
+            else:
+                r.raise_for_status()
+
+    if errors > 0:
+        click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
+
+    return db_stats
 
 
 def millify(n):
@@ -90,43 +128,37 @@ def sizeof_fmt(num):
         num /= 1024.0
 
 
+def get_shards_url(url, db):
+    return url + '/' + db + '/_shards'
+
+
 def get_stats_url(url, db):
     return url + '/' + db
 
 
-def format_table(db_stats):
-    for db in db_stats:
-        click.echo('{0}: ')
-
-
-def get_shard_count(db_url, session):
-    url = db_url + '/_shards'
-    r = session.get(url)
-    r.raise_for_status()
-    return len(r.json()['shards'])
-
-
 def add_recommended_q(db_stats, recommended_shard_docs, recommended_shard_bytes):
-    total_docs = db_stats["doc_count"] + db_stats["doc_del_count"]
-    size_bytes = db_stats["other"]["data_size"]
-    db_stats["q_docs"] = math.ceil((total_docs + 1.0) / float(recommended_shard_docs))
-    db_stats["q_bytes"] = math.ceil((size_bytes + 1.0) / float(recommended_shard_bytes))
+    for s in db_stats:
+        if 'q' in s:
+            total_docs = s['doc_count'] + s['doc_del_count']
+            size_bytes = s['other']['data_size']
+            s['q_docs'] = math.ceil((total_docs + 1.0) / float(recommended_shard_docs))
+            s['q_bytes'] = math.ceil((size_bytes + 1.0) / float(recommended_shard_bytes))
 
 
 def format_stats(pretty_print, db_stats):
-    doc_count = db_stats["doc_count"]
-    doc_del_count = db_stats["doc_del_count"]
-    size = db_stats["other"]["data_size"]
+    doc_count = db_stats['doc_count']
+    doc_del_count = db_stats['doc_del_count']
+    size = db_stats['other']['data_size']
 
     if pretty_print:
         doc_count = millify(doc_count)
         doc_del_count = millify(doc_del_count)
         size = sizeof_fmt(size)
 
-    return [db_stats["db_name"],
+    return [db_stats['db_name'],
             doc_count,
             doc_del_count,
             size,
-            db_stats["q"],
-            db_stats["q_docs"],
-            db_stats["q_bytes"]]
+            db_stats['q'],
+            db_stats['q_docs'],
+            db_stats['q_bytes']]
