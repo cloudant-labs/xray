@@ -56,20 +56,18 @@ def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
     click.echo(tabulate(table, headers=table_headers))
 
 
-def get_db_info(session, connections, base_url, all_dbs):
-    db_stats = []
-    urls = map(partial(get_stats_url, base_url), all_dbs)
-    rs = (grequests.get(u, session=session) for u in urls)
+def process_requests(rs, connections, count, process_fun, ordered=False):
     errors = 0
 
-    click.echo('Fetching db info for {0} databases...'.format(len(all_dbs)))
+    if ordered:
+        request_iterator = grequests.map(rs, size=connections)
+    else:
+        request_iterator = grequests.imap(rs, size=connections)
 
-    with click.progressbar(grequests.imap(rs, size=connections),
-                       length=len(all_dbs)) as bar:
-        for r in bar:
+    with click.progressbar(request_iterator, length=count) as bar:
+        for index, r in enumerate(bar):
             if r.status_code is requests.codes.ok:
-                stats_obj = r.json()
-                db_stats.append(stats_obj)
+                process_fun(index, r)
             elif r.status_code is 404:
                 # indicates database was deleted before we queried it
                 continue
@@ -81,6 +79,20 @@ def get_db_info(session, connections, base_url, all_dbs):
 
     if errors > 0:
         click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
+
+
+def get_db_info(session, connections, base_url, all_dbs):
+    db_stats = []
+    urls = map(partial(get_stats_url, base_url), all_dbs)
+    rs = (grequests.get(u, session=session) for u in urls)
+    url_count = len(urls)
+
+    click.echo('Fetching db info for {0} databases...'.format(url_count))
+
+    def process_response(index, response):
+        db_stats.append(response.json())
+
+    process_requests(rs, connections, url_count, process_response, ordered=True)
 
     return db_stats
 
@@ -89,27 +101,15 @@ def get_shard_data(session, connections, base_url, db_stats):
     db_names = [db['db_name'] for db in db_stats]
     urls = map(partial(get_shards_url, base_url), db_names)
     rs = (grequests.get(u, session=session) for u in urls)
-    errors = 0
+    url_count = len(urls)
 
-    click.echo('Fetching shard counts for {0} databases...'.format(len(db_stats)))
+    click.echo('Fetching shard counts for {0} databases...'.format(url_count))
 
-    with click.progressbar(grequests.map(rs, size=connections),
-                       length=len(db_stats)) as bar:
-        for index, r in enumerate(bar):
-            if r.status_code is requests.codes.ok:
-                q = len(r.json()['shards'])
-                db_stats[index]['q'] = q
-            elif r.status_code is 404:
-                # indicates database was deleted before we queried it
-                continue
-            elif r.status_code is 500:
-                errors = errors + 1
-                click.echo('500 error processing {0}. Continuing...' + r.url, err=True)
-            else:
-                r.raise_for_status()
+    def process_response(index, response):
+        q = len(response.json()['shards'])
+        db_stats[index]['q'] = q
 
-    if errors > 0:
-        click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
+    process_requests(rs, connections, url_count, process_response)
 
     return db_stats
 
