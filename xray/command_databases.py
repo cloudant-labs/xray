@@ -12,12 +12,13 @@ from tabulate import tabulate
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
-@click.option('--shard-docs', '-qd', default=10000000, help='Recommended docs per shard.')
-@click.option('--shard-bytes', '-qs', default=10000000, help='Recommended bytes per shard.')
+@click.option('--shard-docs', '-qd', default=10000000, type=float, help='Recommended docs per shard.')
+@click.option('--shard-size', '-qs', default=10, type=float, help='Recommended GB per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, shard_docs, shard_bytes, connections):
+def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
     all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
     all_dbs = all_dbs_resp.json()
+    shard_bytes = shard_size * 1073741824
 
     db_stats = []
     base_url = obj['URL']
@@ -32,6 +33,8 @@ def databases(obj, limit, pretty_print, shard_docs, shard_bytes, connections):
 
     sorted_db_stats = get_shard_data(session, connections, base_url, sorted_db_stats)
     add_recommended_q(sorted_db_stats, shard_docs, shard_bytes)
+    click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
+    click.echo('Recommended shard size: {0}GB'.format(shard_size))
 
 
     if limit > 0 and len(db_stats) > limit:
@@ -123,7 +126,7 @@ def millify(n):
 
 def sizeof_fmt(num):
     for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
-        if num < 1024.0:
+        if abs(num) < 1024.0:
             return "%3.1f %s" % (num, x)
         num /= 1024.0
 
