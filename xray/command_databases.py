@@ -7,16 +7,15 @@ from tabulate import tabulate
 
 # number of databases
 # top N databases by size, doc count, indexes
-RECOMMENDED_DOCS_PER_SHARD = 10000000.0
-RECOMMENDED_BYTES_PER_SHARD = 10000000.0
-
 
 @click.command()
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
+@click.option('--shard-docs', '-qd', default=10000000, help='Recommended docs per shard.')
+@click.option('--shard-bytes', '-qs', default=10000000, help='Recommended bytes per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, connections):
+def databases(obj, limit, pretty_print, shard_docs, shard_bytes, connections):
     all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
     all_dbs = all_dbs_resp.json()
 
@@ -28,6 +27,8 @@ def databases(obj, limit, pretty_print, connections):
     rs = (grequests.get(u, session=session) for u in urls)
     errors = 0
 
+    click.echo('Analysing {0} databases...'.format(len(all_dbs)))
+
     with click.progressbar(grequests.imap(rs, size=connections),
                        length=len(all_dbs)) as bar:
         for r in bar:
@@ -35,6 +36,7 @@ def databases(obj, limit, pretty_print, connections):
                 stats_obj = r.json()
                 q = get_shard_count(r.url, session)
                 stats_obj['q'] = q
+                add_recommended_q(stats_obj, shard_docs, shard_bytes)
                 db_stats.append(stats_obj)
             elif r.status_code is 404:
                 # indicates database was deleted before we queried it
@@ -104,12 +106,17 @@ def get_shard_count(db_url, session):
     return len(r.json()['shards'])
 
 
+def add_recommended_q(db_stats, recommended_shard_docs, recommended_shard_bytes):
+    total_docs = db_stats["doc_count"] + db_stats["doc_del_count"]
+    size_bytes = db_stats["other"]["data_size"]
+    db_stats["q_docs"] = math.ceil((total_docs + 1.0) / float(recommended_shard_docs))
+    db_stats["q_bytes"] = math.ceil((size_bytes + 1.0) / float(recommended_shard_bytes))
+
+
 def format_stats(pretty_print, db_stats):
     doc_count = db_stats["doc_count"]
     doc_del_count = db_stats["doc_del_count"]
-    size_bytes = db_stats["other"]["data_size"]
-    total_docs = doc_count + doc_del_count
-    size = size_bytes
+    size = db_stats["other"]["data_size"]
 
     if pretty_print:
         doc_count = millify(doc_count)
@@ -121,5 +128,5 @@ def format_stats(pretty_print, db_stats):
             doc_del_count,
             size,
             db_stats["q"],
-            math.ceil(total_docs / RECOMMENDED_DOCS_PER_SHARD),
-            math.ceil(size_bytes / RECOMMENDED_BYTES_PER_SHARD)]
+            db_stats["q_docs"],
+            db_stats["q_bytes"]]
