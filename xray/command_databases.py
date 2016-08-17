@@ -31,11 +31,11 @@ def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
     sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'], reverse=True)
     sorted_db_stats = sorted_db_stats[:limit]
 
+    # get sharding info for each database
     sorted_db_stats = get_shard_data(session, connections, base_url, sorted_db_stats)
     add_recommended_q(sorted_db_stats, shard_docs, shard_bytes)
     click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
     click.echo('Recommended shard size: {0}GB'.format(shard_size))
-
 
     if limit > 0 and len(db_stats) > limit:
         click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
@@ -45,8 +45,7 @@ def databases(obj, limit, pretty_print, shard_docs, shard_size, connections):
                    'sorted by document count descending.')
 
     table_headers = ['name',
-                     'doc count',
-                     'deleted doc count',
+                     'docs (total/active/deleted)',
                      'db size',
                      'q',
                      'recommended q (count)',
@@ -151,16 +150,17 @@ def add_recommended_q(db_stats, recommended_shard_docs, recommended_shard_bytes)
 def format_stats(pretty_print, db_stats):
     doc_count = db_stats['doc_count']
     doc_del_count = db_stats['doc_del_count']
+    doc_count_total = doc_count + doc_del_count
     size = db_stats['other']['data_size']
 
     if pretty_print:
+        doc_count_total = millify(doc_count_total)
         doc_count = millify(doc_count)
         doc_del_count = millify(doc_del_count)
         size = sizeof_fmt(size)
 
     return [db_stats['db_name'],
-            doc_count,
-            doc_del_count,
+            '{0} / {1} / {2}'.format(doc_count_total, doc_count, doc_del_count),
             size,
             db_stats['q'],
             db_stats['q_docs'],
