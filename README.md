@@ -22,9 +22,9 @@ To use it:
 
 # TODO
 
-number of databases
+SOCKS proxy
 
-top N databases by size, doc count, indexes
+index sizes
 
 number of distinct indexes by type  (and ability to dump them out)
 

@@ -3,7 +3,7 @@ Tool to investigate Cloudant/CouchDB cluster usage.
 """
 from setuptools import find_packages, setup
 
-dependencies = ['click', 'grequests', 'tabulate']
+dependencies = ['click', 'grequests', 'tabulate', 'requests[socks]']
 
 setup(
     name='cloudant-xray',
