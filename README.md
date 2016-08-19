@@ -20,24 +20,6 @@ To use it:
     $ xray --help
 
 
-# TODO
+# Example
 
-SOCKS proxy
-
-index sizes
-
-number of distinct indexes by type  (and ability to dump them out)
-
-number of actual indexes by type/db
-
-VDUs
-
-API Key / users usage?
- - _users database present/used?
-
-_update handlers
-
-number of replications? list them?
-
-
-xray https://foo:pass@foo.cloudant.com
+xray 'https://foo:pass@foo.cloudant.com' databases --limit 60 -pp -dd
