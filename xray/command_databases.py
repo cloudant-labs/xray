@@ -12,12 +12,12 @@ from tabulate import tabulate
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
-@click.option('--indexes', '-i', is_flag=True, default=False, help='Show index counts per db. Results are listed as views, view_groups, search, geo, query views, query view groups, query search')
+@click.option('--ddocs', '-dd', is_flag=True, default=False, help='Show ddoc stats / index counts per db. Results are listed as views, view_groups, search, geo, query views, query view groups, query search, validate_doc_update, update handlers')
 @click.option('--shards', '-s', is_flag=True, default=False, help='Show shard counts per db.')
 @click.option('--shard-docs', '-qd', default=10000000, type=float, help='Recommended docs per shard.')
 @click.option('--shard-size', '-qs', default=10, type=float, help='Recommended GB per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, indexes, shards, shard_docs, shard_size, connections):
+def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, connections):
     ctx = obj
     ctx['shards'] = shards
     ctx['pretty_print'] = pretty_print
@@ -51,8 +51,8 @@ def databases(obj, limit, pretty_print, indexes, shards, shard_docs, shard_size,
         sorted_db_stats = get_shard_data(ctx, sorted_db_stats)
         add_recommended_q(ctx, sorted_db_stats)
 
-    if indexes:
-        table_headers.extend(['v/vg/s/g/qv/qvg/qs'])
+    if ddocs:
+        table_headers.extend(['v/vg/s/g/qv/qvg/qs', 'vdu/uh'])
         sorted_db_stats = get_index_data(ctx, sorted_db_stats)
 
     if limit > 0 and len(db_stats) > limit:
@@ -149,7 +149,7 @@ def get_index_data(ctx, db_stats):
     click.echo('Fetching index stats for {0} databases...'.format(url_count))
 
     def process_response(index, response):
-        design_docs = response.json()["rows"]
+        design_docs = response.json()['rows']
         views = 0
         view_groups = 0
         search = 0
@@ -157,6 +157,8 @@ def get_index_data(ctx, db_stats):
         query_views = 0
         query_view_groups = 0
         query_search = 0
+        vdu = 0
+        uh = 0
 
         for row in design_docs:
             doc = row['doc']
@@ -167,29 +169,37 @@ def get_index_data(ctx, db_stats):
 
             if 'views' in doc:
                 if is_query:
-                    query_views = query_views + len(doc["views"])
+                    query_views = query_views + len(doc['views'])
                     query_view_groups = query_view_groups + 1
                 else:
-                    views = views + len(doc["views"])
+                    views = views + len(doc['views'])
                     view_groups = view_groups + 1
 
             if 'indexes' in doc:
                 if is_query:
-                    query_search = query_search + len(doc["indexes"])
+                    query_search = query_search + len(doc['indexes'])
                 else:
-                    search = search + len(doc["indexes"])
+                    search = search + len(doc['indexes'])
 
             if 'st_indexes' in doc:
-                geo = geo + len(doc["st_indexes"])
+                geo = geo + len(doc['st_indexes'])
+
+            if 'updates' in doc:
+                uh = uh + len(doc['updates'])
+
+            if 'validate_doc_update' in doc:
+                vdu = vdu + 1
 
         db_stats[index]['indexes'] = {
-            "views": views,
-            "view_groups": view_groups,
-            "search": search,
-            "geo": geo,
-            "query_views": query_views,
-            "query_view_groups": query_view_groups,
-            "query_search": query_search
+            'views': views,
+            'view_groups': view_groups,
+            'search': search,
+            'geo': geo,
+            'query_views': query_views,
+            'query_view_groups': query_view_groups,
+            'query_search': query_search,
+            'validate_doc_updates': vdu,
+            'update_handlers': uh
         }
 
     process_requests(ctx, rs, url_count, process_response, ordered=True)
@@ -210,7 +220,7 @@ def millify(n):
 def sizeof_fmt(num):
     for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
         if abs(num) < 1024.0:
-            return "%3.1f %s" % (num, x)
+            return '%3.1f %s' % (num, x)
         num /= 1024.0
 
 
@@ -253,5 +263,8 @@ def format_stats(ctx, db_stats):
             indexes['query_views'],
             indexes['query_view_groups'],
             indexes['query_search']))
+        result.append('{0}/{1}'.format(
+            indexes['validate_doc_updates'],
+            indexes['update_handlers']))
 
     return result
