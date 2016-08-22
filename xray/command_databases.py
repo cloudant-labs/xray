@@ -161,7 +161,7 @@ def get_index_data(ctx, db_stats):
             doc = row['doc']
             is_query = False
 
-            if 'language' in doc and doc['language'] is 'query':
+            if 'language' in doc and doc['language'] == 'query':
                 is_query = True
 
             if 'views' in doc:

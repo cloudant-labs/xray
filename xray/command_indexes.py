@@ -93,7 +93,7 @@ def get_index_data(ctx, db_names):
             is_query = False
             indexes = []
 
-            if 'language' in doc and doc['language'] is 'query':
+            if 'language' in doc and doc['language'] == 'query':
                 is_query = True
 
 
