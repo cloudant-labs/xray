@@ -5,9 +5,6 @@ import math
 from functools import partial
 from tabulate import tabulate
 
-# number of databases
-# top N databases by size, doc count, indexes
-
 @click.command()
 @click.pass_obj
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
