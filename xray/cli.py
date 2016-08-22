@@ -1,5 +1,6 @@
 import click
 from command_databases import databases
+from command_indexes import indexes
 
 
 @click.group()
@@ -15,3 +16,4 @@ def main(ctx, url):
     ctx.obj = {'URL': url}
 
 main.add_command(databases)
+main.add_command(indexes)
