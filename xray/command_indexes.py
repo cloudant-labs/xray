@@ -102,7 +102,7 @@ def get_index_data(ctx, db_names):
                     result.append({
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
-                        'type': 'CQ JSON' if is_query else 'view',
+                        'type': 'CQ json' if is_query else 'view',
                         'name': view
                     })
 
@@ -118,7 +118,7 @@ def get_index_data(ctx, db_names):
                     result.append({
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
-                        'type': 'CQ Text' if is_query else 'search',
+                        'type': 'CQ text' if is_query else 'search',
                         'name': i
                     })
 
