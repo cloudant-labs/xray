@@ -20,6 +20,16 @@ To use it:
     $ xray --help
 
 
-# Example
+# Examples
 
-xray 'https://foo:pass@foo.cloudant.com' databases --limit 60 -pp -dd
+### Show database specific command help
+xray 'https://foo:pass@foo.cloudant.com' databases --help
+
+### Get top 60 databases, ordered by doc count
+xray 'https://foo:pass@foo.cloudant.com' databases --limit 60
+
+### Get all databases, ordered by doc count, show current/recommended sharding values
+xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 -s
+
+### Get all databases, ordered by doc count, show defined indexes
+xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd
