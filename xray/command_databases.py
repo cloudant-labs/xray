@@ -4,6 +4,8 @@ import grequests
 import math
 from functools import partial
 from tabulate import tabulate
+import csv
+
 
 @click.command()
 @click.pass_obj
@@ -14,7 +16,8 @@ from tabulate import tabulate
 @click.option('--shard-docs', '-qd', default=10000000, type=float, help='Recommended docs per shard.')
 @click.option('--shard-size', '-qs', default=10, type=float, help='Recommended GB per shard.')
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, connections):
+@click.option('--output', '-o', type=click.Path(), default=None, help='Output to the specified csv')
+def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, connections, output):
     ctx = obj
     ctx['shards'] = shards
     ctx['pretty_print'] = pretty_print
@@ -35,33 +38,45 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
     sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'] + x['doc_del_count'], reverse=True)
     sorted_db_stats = sorted_db_stats[:limit]
 
-    table_headers = ['name',
+    short_headers = ['name',
                      'docs (total/active/deleted)',
                      'db size']
+    expanded_headers = ['name',
+                     'total docs', 'active docs', 'deleted docs',
+                     'db size (bytes)', 'db size']
 
     # get sharding info for each database
     if shards:
         click.echo('Recommended docs/shard: {0}'.format(millify(shard_docs)))
         click.echo('Recommended shard size: {0}GB'.format(shard_size))
 
-        table_headers.extend(['q', 'recommended q (by count/size)'])
+        short_headers.extend(['q', 'recommended q (by count/size)'])
+        expanded_headers.extend(['q', 'recommended q by count', 'recommended q by size)'])
         sorted_db_stats = get_shard_data(ctx, sorted_db_stats)
         add_recommended_q(ctx, sorted_db_stats)
 
     if ddocs:
-        table_headers.extend(['v/vg/s/g/qv/qvg/qs', 'vdu/uh'])
+        short_headers.extend(['v/vg/s/g/qv/qvg/qs', 'vdu/uh'])
+        expanded_headers.extend(['views', 'view groups', 'search', 'geo', 'CQ json' ,'CQ view groups', 'CQ text', 'VDUs', 'update handlers'])
         sorted_db_stats = get_index_data(ctx, sorted_db_stats)
 
-    if limit > 0 and len(db_stats) > limit:
-        click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
-                   'sorted by document count descending.')
-    else:
-        click.echo('Showing all {0} databases, '.format(len(db_stats)) +
-                   'sorted by document count descending.')
+    if output is None:
+        if limit > 0 and len(db_stats) > limit:
+            click.echo('Showing {0} of {1} databases, '.format(limit, len(db_stats)) +
+                       'sorted by document count descending.')
+        else:
+            click.echo('Showing all {0} databases, '.format(len(db_stats)) +
+                       'sorted by document count descending.')
 
-    table = map(partial(format_stats, ctx), sorted_db_stats)
-    click.echo('\n')
-    click.echo(tabulate(table, headers=table_headers))
+        table = map(partial(format_stats, ctx), sorted_db_stats)
+        click.echo('\n')
+        click.echo(tabulate(table, headers=table_headers))
+    else:
+        table = map(partial(format_stats_expanded, ctx), sorted_db_stats)
+        with open(output, 'wb') as csvfile:
+            writer = csv.writer(csvfile, dialect='excel')
+            writer.writerow(expanded_headers)
+            writer.writerows(table)
 
 
 def process_requests(ctx, rs, count, process_fun, ordered=False):
@@ -263,5 +278,36 @@ def format_stats(ctx, db_stats):
         result.append('{0}/{1}'.format(
             indexes['validate_doc_updates'],
             indexes['update_handlers']))
+
+    return result
+
+
+def format_stats_expanded(ctx, db_stats):
+    doc_count = db_stats['doc_count']
+    doc_del_count = db_stats['doc_del_count']
+    doc_count_total = doc_count + doc_del_count
+    size = db_stats['other']['data_size']
+
+    result = [db_stats['db_name'],
+              doc_count_total, doc_count, doc_del_count,
+              size, sizeof_fmt(size)]
+
+    if ctx['shards']:
+        result.extend([
+            db_stats['q'],
+            int(db_stats['q_docs']),
+            int(db_stats['q_bytes'])])
+
+    if 'indexes' in db_stats:
+        indexes = db_stats['indexes']
+        result.extend([indexes['views'],
+            indexes['view_groups'],
+            indexes['search'],
+            indexes['geo'],
+            indexes['query_views'],
+            indexes['query_view_groups'],
+            indexes['query_search'],
+            indexes['validate_doc_updates'],
+            indexes['update_handlers']])
 
     return result
