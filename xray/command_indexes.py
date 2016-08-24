@@ -32,12 +32,12 @@ def indexes(obj, limit, pretty_print, connections):
     index_stats = get_index_data(ctx, all_dbs)
     sorted_index_stats = index_stats[:limit]
 
-    table_headers = (['db name', 'ddoc', 'type', 'index name'])
+    table_headers = (['db name', 'type', 'ddoc', 'index name'])
 
     if limit > 0 and len(index_stats) > limit:
-        click.echo('Showing {0} of {1} indexes, '.format(limit, len(index_stats)))
+        click.echo('Showing {0} of {1} indexes'.format(limit, len(index_stats)))
     else:
-        click.echo('Showing all {0} indexes, '.format(len(index_stats)))
+        click.echo('Showing all {0} indexes'.format(len(index_stats)))
 
     table = map(partial(format_stats, ctx), sorted_index_stats)
     click.echo('\n')
@@ -163,8 +163,8 @@ def sizeof_fmt(num):
 def format_stats(ctx, index_stats):
 
     result = [index_stats['db_name'],
-              index_stats['ddoc'],
               index_stats['type'],
+              index_stats['ddoc'],
               index_stats['name']]
 
     return result
