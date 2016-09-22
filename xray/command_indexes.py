@@ -22,7 +22,9 @@ def indexes(obj, limit, pretty_print, connections):
 
     is_db = 'db_name' in r.json()
     if is_db:
-        all_dbs = [r.json()['db_name']]
+        db_name = r.json()['db_name']
+        all_dbs = [db_name]
+        obj['URL'] = obj['URL'].replace("/" + db_name, "")
     else:
         all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
         all_dbs = all_dbs_resp.json()

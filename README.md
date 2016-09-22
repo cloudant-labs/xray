@@ -17,19 +17,42 @@ Simply run:
 
 To use it:
 
-    $ xray --help
+    $ xray <URL> <command> --help
 
 
-# Examples
+# Commands
 
-### Show database specific command help
+## Databases
+
+Provides a database-centric view of an account.
+
+### Examples
+
+*Show command help*
 xray 'https://foo:pass@foo.cloudant.com' databases --help
 
-### Get top 60 databases, ordered by doc count
+*Get top 60 databases, ordered by doc count*
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 60
 
-### Get all databases, ordered by doc count, show current/recommended sharding values
+*Get all databases, ordered by doc count, show current/recommended sharding values*
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 -s
 
-### Get all databases, ordered by doc count, show defined indexes
+*Get all databases, ordered by doc count, show defined indexes*
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd
+
+*Get all databases, ordered by doc count, show defined indexes, output to file.csv*
+xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd --output file.csv
+
+
+## Indexes
+
+Provides an index-centric view of an account.
+
+### Examples
+
+*Show command help*
+xray 'https://foo:pass@foo.cloudant.com' indexes --help
+
+*Get top 60 indexes, ordered by database/_design doc*
+xray 'https://foo:pass@foo.cloudant.com' indexes --limit 60
+

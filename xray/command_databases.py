@@ -70,7 +70,7 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
 
         table = map(partial(format_stats, ctx), sorted_db_stats)
         click.echo('\n')
-        click.echo(tabulate(table, headers=table_headers))
+        click.echo(tabulate(table, headers=short_headers))
     else:
         table = map(partial(format_stats_expanded, ctx), sorted_db_stats)
         with open(output, 'wb') as csvfile:
