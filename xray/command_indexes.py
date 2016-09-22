@@ -4,6 +4,7 @@ import grequests
 import math
 from functools import partial
 from tabulate import tabulate
+import csv
 
 
 @click.command()
@@ -11,7 +12,8 @@ from tabulate import tabulate
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-def indexes(obj, limit, pretty_print, connections):
+@click.option('--output', '-o', type=click.Path(), default=None, help='Output to the specified csv')
+def indexes(obj, limit, pretty_print, connections, output):
     ctx = obj
     ctx['pretty_print'] = pretty_print
     ctx['connections'] = connections
@@ -35,15 +37,21 @@ def indexes(obj, limit, pretty_print, connections):
     sorted_index_stats = index_stats[:limit]
 
     table_headers = (['db name', 'type', 'ddoc', 'index name'])
-
-    if limit > 0 and len(index_stats) > limit:
-        click.echo('Showing {0} of {1} indexes'.format(limit, len(index_stats)))
-    else:
-        click.echo('Showing all {0} indexes'.format(len(index_stats)))
-
     table = map(partial(format_stats, ctx), sorted_index_stats)
-    click.echo('\n')
-    click.echo(tabulate(table, headers=table_headers))
+
+    if output is None:
+        if limit > 0 and len(index_stats) > limit:
+            click.echo('Showing {0} of {1} indexes'.format(limit, len(index_stats)))
+        else:
+            click.echo('Showing all {0} indexes'.format(len(index_stats)))
+
+        click.echo('\n')
+        click.echo(tabulate(table, headers=table_headers))
+    else:
+        with open(output, 'wb') as csvfile:
+            writer = csv.writer(csvfile, dialect='excel')
+            writer.writerow(table_headers)
+            writer.writerows(table)
 
 
 def process_requests(ctx, rs, count, process_fun, ordered=False):

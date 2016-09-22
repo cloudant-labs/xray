@@ -56,3 +56,9 @@ xray 'https://foo:pass@foo.cloudant.com' indexes --help
 *Get top 60 indexes, ordered by database/_design doc*
 xray 'https://foo:pass@foo.cloudant.com' indexes --limit 60
 
+*Get top 60 indexes for a specific database doc*
+xray 'https://foo:pass@foo.cloudant.com/mydb' indexes --limit 60
+
+*Get all indexes, ordered by database/_design doc output to file.csv*
+xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --output file.csv
+
