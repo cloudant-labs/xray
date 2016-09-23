@@ -28,20 +28,30 @@ Provides a database-centric view of an account.
 
 ### Examples
 
-*Show command help*
+**Show command help**
+```
 xray 'https://foo:pass@foo.cloudant.com' databases --help
+```
 
-*Get top 60 databases, ordered by doc count*
+**Get top 60 databases, ordered by doc count**
+```
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 60
+```
 
-*Get all databases, ordered by doc count, show current/recommended sharding values*
+**Get all databases, ordered by doc count, show current/recommended sharding values**
+```
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 -s
+```
 
-*Get all databases, ordered by doc count, show defined indexes*
+**Get all databases, ordered by doc count, show defined indexes**
+```
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd
+```
 
-*Get all databases, ordered by doc count, show defined indexes, output to file.csv*
+**Get all databases, ordered by doc count, show defined indexes, output to file.csv**
+```
 xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd --output file.csv
+```
 
 
 ## Indexes
@@ -50,15 +60,23 @@ Provides an index-centric view of an account.
 
 ### Examples
 
-*Show command help*
+**Show command help**
+```
 xray 'https://foo:pass@foo.cloudant.com' indexes --help
+```
 
-*Get top 60 indexes, ordered by database/_design doc*
+**Get top 60 indexes, ordered by database/_design doc**
+```
 xray 'https://foo:pass@foo.cloudant.com' indexes --limit 60
+```
 
-*Get top 60 indexes for a specific database doc*
+**Get top 60 indexes for a specific database doc**
+```
 xray 'https://foo:pass@foo.cloudant.com/mydb' indexes --limit 60
+```
 
-*Get all indexes, ordered by database/_design doc output to file.csv*
+**Get all indexes, ordered by database/_design doc output to file.csv**
+```
 xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --output file.csv
+```
 
