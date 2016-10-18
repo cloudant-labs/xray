@@ -75,8 +75,13 @@ xray 'https://foo:pass@foo.cloudant.com' indexes --limit 60
 xray 'https://foo:pass@foo.cloudant.com/mydb' indexes --limit 60
 ```
 
-**Get all indexes, ordered by database/_design doc output to file.csv**
+**Get all indexes, ordered by database/_design doc output as csv**
 ```
-xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --output file.csv
+xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format csv
+```
+
+**Get all indexes, ordered by database/_design doc output as json**
+```
+xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format json
 ```
 

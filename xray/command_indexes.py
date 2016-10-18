@@ -5,6 +5,7 @@ import math
 from functools import partial
 from tabulate import tabulate
 import csv
+import json
 
 
 @click.command()
@@ -12,11 +13,13 @@ import csv
 @click.option('--limit', '-l', default=50, help='Limit results. Set to 0 for all.')
 @click.option('--pretty-print', '-pp', is_flag=True, default=False)
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
-@click.option('--output', '-o', type=click.Path(), default=None, help='Output to the specified csv')
-def indexes(obj, limit, pretty_print, connections, output):
+@click.option('--format', type=click.Choice(['table', 'csv', 'json']), default='table', help='Output format. Accepted values are table, csv and json')
+@click.option('--verbose', '-v', default=False)
+def indexes(obj, limit, pretty_print, connections, format, verbose):
     ctx = obj
     ctx['pretty_print'] = pretty_print
     ctx['connections'] = connections
+    ctx['verbose'] = verbose
 
     # are we hitting one db or all?
     r = requests.get(obj['URL'])
@@ -36,22 +39,26 @@ def indexes(obj, limit, pretty_print, connections, output):
     index_stats = get_index_data(ctx, all_dbs)
     sorted_index_stats = index_stats[:limit]
 
-    table_headers = (['db name', 'type', 'ddoc', 'index name'])
-    table = map(partial(format_stats, ctx), sorted_index_stats)
-
-    if output is None:
-        if limit > 0 and len(index_stats) > limit:
-            click.echo('Showing {0} of {1} indexes'.format(limit, len(index_stats)))
-        else:
-            click.echo('Showing all {0} indexes'.format(len(index_stats)))
-
-        click.echo('\n')
-        click.echo(tabulate(table, headers=table_headers))
+    if format == 'json':
+        click.echo(json.dumps(sorted_index_stats))
     else:
-        with open(output, 'wb') as csvfile:
-            writer = csv.writer(csvfile, dialect='excel')
+        table_headers = (['db name', 'type', 'ddoc', 'index name'])
+        table = map(partial(format_stats, ctx), sorted_index_stats)
+
+        if format == 'table':
+            if limit > 0 and len(index_stats) > limit:
+                click.echo('Showing {0} of {1} indexes'.format(limit, len(index_stats)))
+            else:
+                click.echo('Showing all {0} indexes'.format(len(index_stats)))
+
+            click.echo('\n')
+            click.echo(tabulate(table, headers=table_headers))
+        elif format == 'csv':
+            writer = csv.writer(click.get_text_stream('stdout'), dialect='excel')
             writer.writerow(table_headers)
             writer.writerows(table)
+
+
 
 
 def process_requests(ctx, rs, count, process_fun, ordered=False):
@@ -92,7 +99,8 @@ def get_index_data(ctx, db_names):
     url_count = len(urls)
     result = []
 
-    click.echo('Fetching index stats for {0} databases...'.format(url_count))
+    if ctx['verbose']:
+        click.echo('Fetching index stats for {0} databases...'.format(url_count))
 
     # ['db name', 'ddoc', 'type', 'index name']
     def process_response(index, response):
@@ -116,13 +124,6 @@ def get_index_data(ctx, db_names):
                         'name': view
                     })
 
-                # if is_query:
-                #     query_views = query_views + len(doc['views'])
-                #     query_view_groups = query_view_groups + 1
-                # else:
-                #     views = views + len(doc['views'])
-                #     view_groups = view_groups + 1
-
             if 'indexes' in doc:
                 for i in doc['indexes']:
                     result.append({
@@ -131,11 +132,6 @@ def get_index_data(ctx, db_names):
                         'type': 'CQ text' if is_query else 'search',
                         'name': i
                     })
-
-                # if is_query:
-                #     query_search = query_search + len(doc['indexes'])
-                # else:
-                #     search = search + len(doc['indexes'])
 
             if 'st_indexes' in doc:
                 for g in doc['st_indexes']:
