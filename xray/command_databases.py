@@ -36,7 +36,9 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
 
     ## sort and limit db_stats
     sorted_db_stats = sorted(db_stats, key=lambda x: x['doc_count'] + x['doc_del_count'], reverse=True)
-    sorted_db_stats = sorted_db_stats[:limit]
+
+    if limit > 0:
+        sorted_db_stats = sorted_db_stats[:limit]
 
     short_headers = ['name',
                      'docs (total/active/deleted)',

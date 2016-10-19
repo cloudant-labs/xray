@@ -37,7 +37,11 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     ctx['session'] = requests.session()
 
     index_stats = get_index_data(ctx, all_dbs)
-    sorted_index_stats = index_stats[:limit]
+
+    if limit > 0:
+        sorted_index_stats = index_stats[:limit]
+    else:
+        sorted_index_stats = index_stats
 
     if format == 'json':
         click.echo(json.dumps(sorted_index_stats))
