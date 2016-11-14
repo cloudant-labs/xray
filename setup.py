@@ -1,5 +1,5 @@
 """
-Tool to investigate Cloudant/CouchDB cluster usage.
+A tool to investigate Cloudant/CouchDB cluster usage.
 """
 from setuptools import find_packages, setup
 
@@ -7,12 +7,12 @@ dependencies = ['click', 'grequests', 'tabulate', 'requests[socks]']
 
 setup(
     name='cloudant-xray',
-    version='0.1.0',
-    url='https://github.ibm.com/will-holley/cloudant-xray',
+    version='0.2.0',
+    url='https://github.com/cloudant-labs/xray',
     license='BSD',
     author='Will Holley',
     author_email='will.holley@uk.ibm.com',
-    description='Tool to investigate Cloudant/CouchDB cluster usage.',
+    description='A tool to analyze Cloudant/CouchDB cluster usage.',
     long_description=__doc__,
     packages=find_packages(exclude=['tests']),
     include_package_data=True,
@@ -28,8 +28,8 @@ setup(
         # As from http://pypi.python.org/pypi?%3Aaction=list_classifiers
         # 'Development Status :: 1 - Planning',
         # 'Development Status :: 2 - Pre-Alpha',
-        'Development Status :: 3 - Alpha',
-        # 'Development Status :: 4 - Beta',
+        # 'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         # 'Development Status :: 5 - Production/Stable',
         # 'Development Status :: 6 - Mature',
         # 'Development Status :: 7 - Inactive',
