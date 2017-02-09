@@ -46,7 +46,7 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     if format == 'json':
         click.echo(json.dumps(sorted_index_stats))
     else:
-        table_headers = (['db name', 'type', 'ddoc', 'index name'])
+        table_headers = (['db name', 'type', 'ddoc', 'index name', 'size'])
         table = map(partial(format_stats, ctx), sorted_index_stats)
 
         if format == 'table':
@@ -97,6 +97,17 @@ def get_ddocs_url(url, db):
     return '{0}/{1}/_all_docs?startkey=%22_design%252F%22&endkey=%22_design0%22&include_docs=true'.format(url, db)
 
 
+def get_ddocs_info_url(url, db, ddoc):
+    return '{0}/{1}/{2}/_info'.format(url, db, ddoc)
+
+
+def get_ddocs_info(url, db, ddoc):
+    url = get_ddocs_info_url(url, db, ddoc)
+    r = requests.get(url)
+    r.raise_for_status()
+    return r.json()
+
+
 def get_index_data(ctx, db_names):
     urls = map(partial(get_ddocs_url, ctx['URL']), db_names)
     rs = (grequests.get(u, session=ctx['session']) for u in urls)
@@ -118,14 +129,15 @@ def get_index_data(ctx, db_names):
             if 'language' in doc and doc['language'] == 'query':
                 is_query = True
 
-
             if 'views' in doc:
+                info = get_ddocs_info(ctx['URL'], db_names[index], doc['_id'])
                 for view in doc['views']:
                     result.append({
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
                         'type': 'CQ json' if is_query else 'view',
-                        'name': view
+                        'name': view,
+                        'size_bytes': info['view_index']['disk_size']
                     })
 
             if 'indexes' in doc:
@@ -134,7 +146,8 @@ def get_index_data(ctx, db_names):
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
                         'type': 'CQ text' if is_query else 'search',
-                        'name': i
+                        'name': i,
+                        'size_bytes': -1
                     })
 
             if 'st_indexes' in doc:
@@ -143,7 +156,8 @@ def get_index_data(ctx, db_names):
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
                         'type': 'geo',
-                        'name': g
+                        'name': g,
+                        'size_bytes': -1
                     })
 
         return result
@@ -172,9 +186,14 @@ def sizeof_fmt(num):
 
 def format_stats(ctx, index_stats):
 
+    size = index_stats['size_bytes']
+    if ctx['pretty_print']:
+        size = sizeof_fmt(size)
+
     result = [index_stats['db_name'],
               index_stats['type'],
               index_stats['ddoc'],
-              index_stats['name']]
+              index_stats['name'],
+              size]
 
     return result
