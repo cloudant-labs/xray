@@ -42,10 +42,10 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
     if limit > 0:
         sorted_db_stats = sorted_db_stats[:limit]
 
-    short_headers = ['host','name',
+    short_headers = ['host','cloudant backend','db',
                      'docs (total/active/deleted)',
                      'db size']
-    expanded_headers = ['host','name',
+    expanded_headers = ['host','cloudant backend','db',
                      'total docs', 'active docs', 'deleted docs',
                      'db size (bytes)', 'db size']
 
@@ -129,6 +129,10 @@ def get_db_info(ctx, all_dbs):
 
     def process_response(index, response):
         metadata = response.json()
+        if 'X-Cloudant-Backend' in response.headers:
+            metadata['backend'] = response.headers['X-Cloudant-Backend']
+        else:
+            metadata['backend'] = None
         db_stats[index].update(metadata)
 
     process_requests(ctx, rs, url_count, process_response)
@@ -264,7 +268,7 @@ def format_stats(ctx, db_stats):
         doc_del_count = millify(doc_del_count)
         size = sizeof_fmt(size)
 
-    result = [db_stats['host'], db_stats['name'],
+    result = [db_stats['host'], db_stats['backend'], db_stats['name'],
               '{0} / {1} / {2}'.format(doc_count_total, doc_count, doc_del_count),
               size]
 
@@ -295,7 +299,7 @@ def format_stats_expanded(ctx, db_stats):
     doc_count_total = doc_count + doc_del_count
     size = db_stats['other']['data_size']
 
-    result = [db_stats['host'], db_stats['name'],
+    result = [db_stats['host'], db_stats['backend'], db_stats['name'],
               doc_count_total, doc_count, doc_del_count,
               size, sizeof_fmt(size)]
 
