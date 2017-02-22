@@ -4,16 +4,23 @@ from command_indexes import indexes
 
 
 @click.group()
-@click.argument('url', required=True)
+@click.option('--url', required=False)
+@click.option('--source', type=click.File('r'), default=None, help='Use source URLs from the specified input file. Assumes one URL per line.')
 @click.pass_context
-def main(ctx, url):
+def main(ctx, url, source):
     """Tool to investigate Cloudant/CouchDB cluster usage.
 
     \b
     example:
-    $ xray https://user:password@user.cloudant.com --databases
+    $ xray --url https://user:password@user.cloudant.com databases
     """
-    ctx.obj = {'URL': url}
+    if source is None and url is None:
+        raise click.UsageError('No URL specified')
+
+    if source is None:
+        ctx.obj = {'URLs': [url]}
+    else:
+        ctx.obj = {'URLs': map(lambda x: x.strip(), source.readlines())}
 
 main.add_command(databases)
 main.add_command(indexes)

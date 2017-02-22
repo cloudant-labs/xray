@@ -21,8 +21,8 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     ctx['connections'] = connections
     ctx['verbose'] = verbose
 
-    # are we hitting one db or all?
-    r = requests.get(obj['URL'])
+    # Hack - only support first URL for now
+    r = requests.get(obj['URLs'][0])
     r.raise_for_status()
 
     is_db = 'db_name' in r.json()

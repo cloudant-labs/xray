@@ -17,7 +17,7 @@ Simply run:
 
 To use it:
 
-    $ xray <URL> <command> --help
+    $ xray --url <url> <command> --help
 
 
 # Commands
@@ -30,29 +30,35 @@ Provides a database-centric view of an account.
 
 **Show command help**
 ```
-xray 'https://foo:pass@foo.cloudant.com' databases --help
+xray --url 'https://foo:pass@foo.cloudant.com' databases --help
 ```
 
 **Get top 60 databases, ordered by doc count**
 ```
-xray 'https://foo:pass@foo.cloudant.com' databases --limit 60
+xray --url 'https://foo:pass@foo.cloudant.com' databases --limit 60
 ```
 
 **Get all databases, ordered by doc count, show current/recommended sharding values**
 ```
-xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 -s
+xray --url 'https://foo:pass@foo.cloudant.com' databases --limit 0 -s
 ```
 
 **Get all databases, ordered by doc count, show defined indexes**
 ```
-xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd
+xray --url 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd
 ```
 
 **Get all databases, ordered by doc count, show defined indexes, output to file.csv**
 ```
-xray 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd --output file.csv
+xray --url 'https://foo:pass@foo.cloudant.com' databases --limit 0 --dd --output file.csv
 ```
 
+**Get top 60 databases across multiple urls**
+```
+xray --source urls.csv databases --limit 60
+```
+
+In this case, urls is a file with one URL per line
 
 ## Indexes
 
@@ -62,26 +68,26 @@ Provides an index-centric view of an account.
 
 **Show command help**
 ```
-xray 'https://foo:pass@foo.cloudant.com' indexes --help
+xray --url 'https://foo:pass@foo.cloudant.com' indexes --help
 ```
 
 **Get top 60 indexes, ordered by database/_design doc**
 ```
-xray 'https://foo:pass@foo.cloudant.com' indexes --limit 60
+xray --url 'https://foo:pass@foo.cloudant.com' indexes --limit 60
 ```
 
 **Get top 60 indexes for a specific database doc**
 ```
-xray 'https://foo:pass@foo.cloudant.com/mydb' indexes --limit 60
+xray --url 'https://foo:pass@foo.cloudant.com/mydb' indexes --limit 60
 ```
 
 **Get all indexes, ordered by database/_design doc output as csv**
 ```
-xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format csv
+xray --url 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format csv
 ```
 
 **Get all indexes, ordered by database/_design doc output as json**
 ```
-xray 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format json
+xray --url 'https://foo:pass@foo.cloudant.com' indexes --limit 0 --format json
 ```
 

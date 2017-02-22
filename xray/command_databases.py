@@ -2,6 +2,7 @@ import click
 import requests
 import grequests
 import math
+from urlparse import urlparse
 from functools import partial
 from tabulate import tabulate
 import csv
@@ -23,8 +24,9 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
     ctx['pretty_print'] = pretty_print
     ctx['connections'] = connections
 
-    all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
-    all_dbs = all_dbs_resp.json()
+    all_dbs = []
+    for root_url in obj['URLs']:
+        all_dbs = all_dbs + get_database_list(root_url)
 
     ctx['shard_docs'] = float(shard_docs)
     ctx['shard_bytes'] = float(shard_size * 1073741824)
@@ -40,10 +42,10 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
     if limit > 0:
         sorted_db_stats = sorted_db_stats[:limit]
 
-    short_headers = ['name',
+    short_headers = ['host','name',
                      'docs (total/active/deleted)',
                      'db size']
-    expanded_headers = ['name',
+    expanded_headers = ['host','name',
                      'total docs', 'active docs', 'deleted docs',
                      'db size (bytes)', 'db size']
 
@@ -81,6 +83,15 @@ def databases(obj, limit, pretty_print, ddocs, shards, shard_docs, shard_size, c
             writer.writerows(table)
 
 
+def get_database_list(root_url):
+    all_dbs_resp = requests.get(root_url + '/_all_dbs')
+    all_dbs = all_dbs_resp.json()
+    host = urlparse(root_url).hostname
+    return map(lambda x: {'url': root_url + '/' + x,
+                          'name': x,
+                          'host': host}, all_dbs)
+
+
 def process_requests(ctx, rs, count, process_fun, ordered=False):
     errors = 0
     index = -1
@@ -109,33 +120,28 @@ def process_requests(ctx, rs, count, process_fun, ordered=False):
         click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
 
-def get_db_info_url(url, db):
-    return '{0}/{1}'.format(url, db)
-
-
 def get_db_info(ctx, all_dbs):
-    db_stats = []
-    urls = map(partial(get_db_info_url, ctx['URL']), all_dbs)
-    rs = (grequests.get(u, session=ctx['session']) for u in urls)
-    url_count = len(urls)
+    db_stats = all_dbs[:]
+    rs = (grequests.get(d['url'], session=ctx['session']) for d in db_stats)
+    url_count = len(db_stats)
 
     click.echo('Fetching db info for {0} databases...'.format(url_count))
 
     def process_response(index, response):
-        db_stats.append(response.json())
+        metadata = response.json()
+        db_stats[index].update(metadata)
 
     process_requests(ctx, rs, url_count, process_response)
 
     return db_stats
 
 
-def get_shards_url(url, db):
-    return '{0}/{1}/_shards'.format(url, db)
+def get_shards_url(db):
+    return '{0}/_shards'.format(db['url'])
 
 
 def get_shard_data(ctx, db_stats):
-    db_names = [db['db_name'] for db in db_stats]
-    urls = map(partial(get_shards_url, ctx['URL']), db_names)
+    urls = map(get_shards_url, db_stats)
     rs = (grequests.get(u, session=ctx['session']) for u in urls)
     url_count = len(urls)
 
@@ -150,13 +156,12 @@ def get_shard_data(ctx, db_stats):
     return db_stats
 
 
-def get_ddocs_url(url, db):
-    return '{0}/{1}/_all_docs?startkey=%22_design%252F%22&endkey=%22_design0%22&include_docs=true'.format(url, db)
+def get_ddocs_url(db):
+    return '{0}/_all_docs?startkey=%22_design%252F%22&endkey=%22_design0%22&include_docs=true'.format(db['url'])
 
 
 def get_index_data(ctx, db_stats):
-    db_names = [db['db_name'] for db in db_stats]
-    urls = map(partial(get_ddocs_url, ctx['URL']), db_names)
+    urls = map(get_ddocs_url, db_stats)
     rs = (grequests.get(u, session=ctx['session']) for u in urls)
     url_count = len(urls)
 
@@ -259,7 +264,7 @@ def format_stats(ctx, db_stats):
         doc_del_count = millify(doc_del_count)
         size = sizeof_fmt(size)
 
-    result = [db_stats['db_name'],
+    result = [db_stats['host'], db_stats['name'],
               '{0} / {1} / {2}'.format(doc_count_total, doc_count, doc_del_count),
               size]
 
@@ -290,7 +295,7 @@ def format_stats_expanded(ctx, db_stats):
     doc_count_total = doc_count + doc_del_count
     size = db_stats['other']['data_size']
 
-    result = [db_stats['db_name'],
+    result = [db_stats['host'], db_stats['name'],
               doc_count_total, doc_count, doc_del_count,
               size, sizeof_fmt(size)]
 
