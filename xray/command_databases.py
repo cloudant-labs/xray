@@ -92,20 +92,15 @@ def get_database_list(root_url):
                           'host': host}, all_dbs)
 
 
-def process_requests(ctx, rs, count, process_fun, ordered=False):
+def process_requests(ctx, rs, count, process_fun):
     errors = 0
-    index = -1
 
-    if ordered:
-        request_iterator = grequests.map(rs, size=ctx['connections'])
-    else:
-        request_iterator = grequests.imap(rs, size=ctx['connections'])
+    request_iterator = grequests.imap(rs, size=ctx['connections'])
 
     with click.progressbar(request_iterator, length=count) as bar:
         for r in bar:
-            index = index + 1
             if r.status_code is requests.codes.ok:
-                process_fun(index, r)
+                process_fun(r)
             elif r.status_code is 404:
                 # indicates database was deleted before we queried it
                 continue
@@ -120,20 +115,31 @@ def process_requests(ctx, rs, count, process_fun, ordered=False):
         click.echo('Failed to get data for {0} databases due to server errors'.format(errors))
 
 
+def find_by_db(dbs, name):
+    for index, item in enumerate(dbs):
+        if item['name'] == name:
+            return item
+
+
 def get_db_info(ctx, all_dbs):
     db_stats = all_dbs[:]
-    rs = (grequests.get(d['url'], session=ctx['session']) for d in db_stats)
+    rs = (grequests.get(d['url'],
+                        session=ctx['session'],
+                        headers=dict(db_name=d['name'])) for d in db_stats)
     url_count = len(db_stats)
 
     click.echo('Fetching db info for {0} databases...'.format(url_count))
 
-    def process_response(index, response):
+    def process_response(response):
         metadata = response.json()
         if 'X-Cloudant-Backend' in response.headers:
             metadata['backend'] = response.headers['X-Cloudant-Backend']
         else:
             metadata['backend'] = None
-        db_stats[index].update(metadata)
+
+        # hack to associate response with a db
+        db_name = response.request.headers['db_name']
+        find_by_db(db_stats, db_name).update(metadata)
 
     process_requests(ctx, rs, url_count, process_response)
 
@@ -145,17 +151,22 @@ def get_shards_url(db):
 
 
 def get_shard_data(ctx, db_stats):
-    urls = map(get_shards_url, db_stats)
-    rs = (grequests.get(u, session=ctx['session']) for u in urls)
-    url_count = len(urls)
+    rs = (grequests.get(get_shards_url(d),
+                        session=ctx['session'],
+                        headers=dict(db_name=d['name'])) for d in db_stats)
+
+    url_count = len(db_stats)
 
     click.echo('Fetching shard counts for {0} databases...'.format(url_count))
 
-    def process_response(index, response):
+    def process_response(response):
         q = len(response.json()['shards'])
-        db_stats[index]['q'] = q
 
-    process_requests(ctx, rs, url_count, process_response, ordered=True)
+        # hack to associate response with a db
+        db_name = response.request.headers['db_name']
+        find_by_db(db_stats, db_name)['q'] = q
+
+    process_requests(ctx, rs, url_count, process_response)
 
     return db_stats
 
@@ -165,13 +176,14 @@ def get_ddocs_url(db):
 
 
 def get_index_data(ctx, db_stats):
-    urls = map(get_ddocs_url, db_stats)
-    rs = (grequests.get(u, session=ctx['session']) for u in urls)
-    url_count = len(urls)
+    rs = (grequests.get(get_ddocs_url(d),
+                        session=ctx['session'],
+                        headers=dict(db_name=d['name'])) for d in db_stats)
+    url_count = len(db_stats)
 
     click.echo('Fetching index stats for {0} databases...'.format(url_count))
 
-    def process_response(index, response):
+    def process_response(response):
         design_docs = response.json()['rows']
         views = 0
         view_groups = 0
@@ -213,7 +225,9 @@ def get_index_data(ctx, db_stats):
             if 'validate_doc_update' in doc:
                 vdu = vdu + 1
 
-        db_stats[index]['indexes'] = {
+        # hack to associate response with a db
+        db_name = response.request.headers['db_name']
+        find_by_db(db_stats, db_name)['indexes'] = {
             'views': views,
             'view_groups': view_groups,
             'search': search,
@@ -225,7 +239,7 @@ def get_index_data(ctx, db_stats):
             'update_handlers': uh
         }
 
-    process_requests(ctx, rs, url_count, process_response, ordered=True)
+    process_requests(ctx, rs, url_count, process_response)
 
     return db_stats
 
@@ -236,7 +250,7 @@ def millify(n):
 
     millnames = ['', 'k', 'M', 'B', 'T']
     millidx = max(0, min(len(millnames)-1,
-                      int(math.floor(math.log10(abs(n))/3.0))))
+                     int(math.floor(math.log10(abs(n))/3.0))))
     return '%.0f%s' % (n/10**(3*millidx), millnames[millidx])
 
 

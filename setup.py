@@ -7,7 +7,7 @@ dependencies = ['click', 'grequests', 'tabulate', 'requests[socks]']
 
 setup(
     name='cloudant-xray',
-    version='0.3.0',
+    version='0.4.0',
     url='https://github.com/cloudant-labs/xray',
     license='BSD',
     author='Will Holley',
