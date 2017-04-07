@@ -22,16 +22,17 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     ctx['verbose'] = verbose
 
     # Hack - only support first URL for now
-    r = requests.get(obj['URLs'][0])
+    url = obj['URLs'][0]
+    r = requests.get(url)
     r.raise_for_status()
 
     is_db = 'db_name' in r.json()
     if is_db:
         db_name = r.json()['db_name']
         all_dbs = [db_name]
-        obj['URL'] = obj['URL'].replace("/" + db_name, "")
+        ctx['URL'] = url.replace("/" + db_name, "")
     else:
-        all_dbs_resp = requests.get(obj['URL'] + '/_all_dbs')
+        all_dbs_resp = requests.get(url + '/_all_dbs')
         all_dbs = all_dbs_resp.json()
 
     ctx['session'] = requests.session()
