@@ -6,6 +6,7 @@ from functools import partial
 from tabulate import tabulate
 import csv
 import json
+import urllib
 
 
 @click.command()
@@ -33,7 +34,8 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
         ctx['URL'] = url.replace("/" + db_name, "")
     else:
         all_dbs_resp = requests.get(url + '/_all_dbs')
-        all_dbs = all_dbs_resp.json()
+        all_dbs = map(lambda n: urllib.quote(n, safe=''), all_dbs_resp.json())
+        ctx['URL'] = obj['URLs'][0]
 
     ctx['session'] = requests.session()
 
@@ -47,7 +49,7 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     if format == 'json':
         click.echo(json.dumps(sorted_index_stats))
     else:
-        table_headers = (['db name', 'type', 'ddoc', 'index name', 'size'])
+        table_headers = (['db name', 'type', 'ddoc', 'index name', 'size', 'dbcopy'])
         table = map(partial(format_stats, ctx), sorted_index_stats)
 
         if format == 'table':
@@ -125,21 +127,34 @@ def get_index_data(ctx, db_names):
         for row in design_docs:
             doc = row['doc']
             is_query = False
-            indexes = []
+
+            # can happen when attempting to fetch invalid design documents
+            if doc is None:
+                continue
 
             if 'language' in doc and doc['language'] == 'query':
                 is_query = True
 
+            dbcopy = {}
+            if 'options' in doc and 'epi' in doc['options'] and 'dbcopy' in doc['options']['epi']:
+                dbcopy = doc['options']['epi']['dbcopy']
+
             if 'views' in doc:
                 info = get_ddocs_info(ctx['URL'], db_names[index], doc['_id'])
                 for view in doc['views']:
-                    result.append({
+                    view_metadata = {
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
                         'type': 'CQ json' if is_query else 'view',
                         'name': view,
-                        'size_bytes': info['view_index']['disk_size']
-                    })
+                        'size_bytes': info['view_index']['disk_size'],
+                        'dbcopy': view['dbcopy '] if 'dbcopy' in view else ''
+                    }
+
+                    if view in dbcopy:
+                        view_metadata['dbcopy'] = dbcopy[view]
+
+                    result.append(view_metadata)
 
             if 'indexes' in doc:
                 for i in doc['indexes']:
@@ -148,7 +163,8 @@ def get_index_data(ctx, db_names):
                         'ddoc': doc['_id'],
                         'type': 'CQ text' if is_query else 'search',
                         'name': i,
-                        'size_bytes': -1
+                        'size_bytes': -1,
+                        'dbcopy': ''
                     })
 
             if 'st_indexes' in doc:
@@ -158,7 +174,8 @@ def get_index_data(ctx, db_names):
                         'ddoc': doc['_id'],
                         'type': 'geo',
                         'name': g,
-                        'size_bytes': -1
+                        'size_bytes': -1,
+                        'dbcopy': ''
                     })
 
         return result
@@ -195,6 +212,7 @@ def format_stats(ctx, index_stats):
               index_stats['type'],
               index_stats['ddoc'],
               index_stats['name'],
-              size]
+              size,
+              index_stats['dbcopy']]
 
     return result
