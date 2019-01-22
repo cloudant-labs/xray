@@ -16,7 +16,8 @@ import urllib
 @click.option('--connections', '-con', default=100, help='Number of parallel connections to make to the server.')
 @click.option('--format', type=click.Choice(['table', 'csv', 'json']), default='table', help='Output format. Accepted values are table, csv and json')
 @click.option('--verbose', '-v', default=False)
-def indexes(obj, limit, pretty_print, connections, format, verbose):
+@click.option('--output', '-o', type=click.Path(), default=None, help='Output to the specified csv')
+def indexes(obj, limit, pretty_print, connections, format, verbose, output):
     ctx = obj
     ctx['pretty_print'] = pretty_print
     ctx['connections'] = connections
@@ -46,6 +47,9 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     else:
         sorted_index_stats = index_stats
 
+    if len(output) > 0:
+        format = 'csv'
+
     if format == 'json':
         click.echo(json.dumps(sorted_index_stats))
     else:
@@ -61,11 +65,15 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
             click.echo('\n')
             click.echo(tabulate(table, headers=table_headers))
         elif format == 'csv':
-            writer = csv.writer(click.get_text_stream('stdout'), dialect='excel')
-            writer.writerow(table_headers)
-            writer.writerows(table)
-
-
+            if output is None:
+                writer = csv.writer(click.get_text_stream('stdout'), dialect='excel')
+                writer.writerow(table_headers)
+                writer.writerows(table)
+            else:
+                with open(output, 'wb') as csvfile:
+                    writer = csv.writer(csvfile, dialect='excel')
+                    writer.writerow(table_headers)
+                    writer.writerows(table)
 
 
 def process_requests(ctx, rs, count, process_fun, ordered=False):
@@ -225,6 +233,6 @@ def format_stats(ctx, index_stats):
               size,
               index_stats['dbcopy'],
               'true' if index_stats['reduce'] else 'false',
-              'true' if index_stats['custom_reduce'] else 'false']]
+              'true' if index_stats['custom_reduce'] else 'false']
 
     return result
