@@ -49,7 +49,7 @@ def indexes(obj, limit, pretty_print, connections, format, verbose):
     if format == 'json':
         click.echo(json.dumps(sorted_index_stats))
     else:
-        table_headers = (['db name', 'type', 'ddoc', 'index name', 'size', 'dbcopy'])
+        table_headers = (['db name', 'type', 'ddoc', 'index name', 'size', 'dbcopy', 'reduce', 'custom_reduce'])
         table = map(partial(format_stats, ctx), sorted_index_stats)
 
         if format == 'table':
@@ -142,13 +142,19 @@ def get_index_data(ctx, db_names):
             if 'views' in doc:
                 info = get_ddocs_info(ctx['URL'], db_names[index], doc['_id'])
                 for view in doc['views']:
+                    view_definition = doc['views'][view]
+                    has_reduce = 'reduce' in view_definition
+                    custom_reduce = has_reduce and not view_definition['reduce'] \
+                                    .strip().startswith('_')
                     view_metadata = {
                         'db_name': db_names[index],
                         'ddoc': doc['_id'],
                         'type': 'CQ json' if is_query else 'view',
                         'name': view,
                         'size_bytes': info['view_index']['disk_size'],
-                        'dbcopy': view['dbcopy '] if 'dbcopy' in view else ''
+                        'dbcopy': view['dbcopy'] if 'dbcopy' in view else '',
+                        'reduce': has_reduce,
+                        'custom_reduce': custom_reduce
                     }
 
                     if view in dbcopy:
@@ -164,7 +170,9 @@ def get_index_data(ctx, db_names):
                         'type': 'CQ text' if is_query else 'search',
                         'name': i,
                         'size_bytes': -1,
-                        'dbcopy': ''
+                        'dbcopy': '',
+                        'reduce': False,
+                        'custom_reduce': False
                     })
 
             if 'st_indexes' in doc:
@@ -175,7 +183,9 @@ def get_index_data(ctx, db_names):
                         'type': 'geo',
                         'name': g,
                         'size_bytes': -1,
-                        'dbcopy': ''
+                        'dbcopy': '',
+                        'reduce': False,
+                        'custom_reduce': False
                     })
 
         return result
@@ -213,6 +223,8 @@ def format_stats(ctx, index_stats):
               index_stats['ddoc'],
               index_stats['name'],
               size,
-              index_stats['dbcopy']]
+              index_stats['dbcopy'],
+              'true' if index_stats['reduce'] else 'false',
+              'true' if index_stats['custom_reduce'] else 'false']]
 
     return result
